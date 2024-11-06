@@ -202,7 +202,7 @@ using Unitful: °
 S = [I, cos(2γ), sin(2γ), 0]
 # need to specify eltype for symbolic variable
 # perfect mirror
-M = mirror(typeof(I), 1, 180°, χ)
+M = mirror(typeof(I), χ; delta=180°)
 nothing # hide
 ```
 
@@ -268,3 +268,78 @@ I \\
 ```
 
 which fully recreates Eq. 13 from the manuscript.
+
+
+## Analyzing A Polarimeter's Performance
+
+Following TODOref, we consider a general Stokes polarimeter and wish to analyze its performance. As we showed in [Differential polarimetry](@ref) we can combine multiple intensity measurements with the Mueller matrix for each state to estimate the input Stokes values. This can be broken down into a simple matrix inversion
+
+```math
+\begin{equation}
+\hat{S}_\mathrm{in} = \left(W^T W \right)^{-1} \cdot S_\mathrm{out}
+\end{equation}
+```
+
+```@example analysis
+using Mueller
+using Unitful: °
+
+hwp_angs = (0°, 45°, 22.5°, 67.5°)
+
+system(hwp_ang, beam) = wollaston(beam) * hwp(hwp_ang)
+
+W = mapreduce(vcat, hwp_angs) do hwp_ang
+    # get first row of each matrix
+    M_1 = @view system(hwp_ang, true)[begin, :]
+    M_2 = @view system(hwp_ang, false)[begin, :]
+    return [M_1'; M_2']
+end
+W
+```
+
+This measurement matrix, `W`, encodes the full polarimeter sequence and can be used to estimate the input Stokes values
+
+```@example analysis
+Sin = [1, 0.3, -0.1, 0]
+measurements = mapreduce(vcat, hwp_angs) do hwp_ang
+    # get intensity measurement of each input
+    S_1 = system(hwp_ang, true) * Sin
+    S_2 = system(hwp_ang, false) * Sin
+    return vcat(S_1', S_2')
+end
+```
+
+```@example analysis
+Sout = view(W \ measurements, :, 1)
+```
+
+we see this matches our input! But what happens when we add _noise_ to our measurements (e.g. detector noise)
+
+```@example analysis
+using StableRNGs
+rng = StableRNG(11234)
+
+Sin = [1, 0.3, -0.1, 0]
+noise = 0.01
+noisy_measurements = mapreduce(vcat, hwp_angs) do hwp_ang
+    # get intensity measurement of each input
+    S_1 = system(hwp_ang, true) * Sin  .+ randn(rng, 4) .* noise
+    S_2 = system(hwp_ang, false) * Sin  .+ randn(rng, 4) .* noise
+    return vcat(S_1', S_2')
+end
+```
+
+```@example analysis
+Sout = view(W \ noisy_measurements, :, 1)
+```
+
+we see our estimate of the input is reduced in accuracy due to the noisy measurements. While we simply added detector noise, the noise can come from many sources, including imperfect polarization components in the system (i.e., a non-ideal half-wave plate). Because our estimation method above is rooted in the least-squares inversion of the measurement matrix, `W`, we can use some linear algebra to better understand our polarimeter.
+
+One of the key things we can learn is how resilient our polarimeter is to noise through its [null space](). We can use the [condition number](https://en.wikipedia.org/wiki/Condition_number) to determine how "large" or "small" our null space is. A perfect polarimeter will have a condition number of 0, while an imperfect polarimeter will have a larger condition number. 
+
+```@example analysis
+using LinearAlgebra
+
+F = svd(W)
+F
+```
