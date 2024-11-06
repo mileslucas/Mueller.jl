@@ -87,7 +87,7 @@ rng = StableRNG(128584)
         @testset "hwp" begin
             M = hwp(T)
             @test eltype(M) == T
-            @test M ≈ waveplate(T, π, 0)
+            @test M ≈ waveplate(T, 0, delta=π)
 
             Sp = M * T[1, 1, 0, 0]
             @test Sp ≈ T[1, 1, 0, 0] atol=1e-10
@@ -105,7 +105,7 @@ rng = StableRNG(128584)
         @testset "qwp" begin
             M = qwp(T)
             @test eltype(M) == T
-            @test M ≈ waveplate(T, π/2, 0)
+            @test M ≈ waveplate(T, 0, delta=π/2)
 
             Sp = M * T[1, 1, 0, 0]
             @test Sp ≈ T[1, 1, 0, 0] atol=1e-10
